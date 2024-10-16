@@ -10,7 +10,7 @@ endif
 header_files := $(wildcard ../src/*.h)
 source_files := $(wildcard ../src/*.c)
 asset_files := $(wildcard ../src/assets/*.*)
-libraries := -D_REENTRANT -I/usr/include/SDL2 -lSDL2
+libraries := -D_REENTRANT -I/usr/include/SDL2 -lSDL2 -lSDL2_image
 
 stratego: main.o assets
 	gcc -o "$(output_dir)/stratego" $(wildcard $(output_dir)/*.o) $(libraries)
