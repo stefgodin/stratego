@@ -6,15 +6,11 @@
 
 ### Release
 ```
-cd build
-make
-./rls
+./bin/release_build.sh && ./bin/release_run.sh
 ```
 
-### Debug
+### Debug (gdb)
 ```
-cd build
-make DEBUG=1
-./dbg
+./bin/debug_build.sh && ./bin/debug_debug.sh
 run
 ```
