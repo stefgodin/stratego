@@ -1,6 +1,7 @@
 #include "SDL2/SDL.h"
 #include "SDL2/SDL_image.h"
 #include "asset.h"
+#include "camera.h"
 #include "error.h"
 #include "math.h"
 #include <stdio.h>
@@ -21,19 +22,7 @@ typedef struct {
   int selected_cell;
 } state_t;
 
-enum { MAX_ZOOM = 4 };
-typedef struct {
-  SDL_Rect view_rect;
-  SDL_Rect viewport_rect;
-  int view_w;
-  int view_h;
-  SDL_Texture *view_tex;
-  int target_w;
-  int target_h;
-  SDL_Texture *target_tex;
-  float viewport_ratio;
-  int zoom;
-} camera_t;
+enum { MAX_ZOOM = 16, GRID_TILE_WIDTH = 256 };
 
 typedef struct {
   camera_t camera;
@@ -115,9 +104,9 @@ void Game_Init(game_t *game) {
 
   game->assets = Assets_Init(game);
 
-  game->state.grid_count = 10;
+  game->state.grid_count = 25;
   game->state.grid_lines = game->state.grid_count + 1;
-  game->state.grid_cell_w = 256;
+  game->state.grid_cell_w = GRID_TILE_WIDTH;
   game->state.grid_cell_h = game->state.grid_cell_w / 2;
   game->state.grid_w = game->state.grid_count * game->state.grid_cell_w;
   game->state.grid_h = game->state.grid_count * game->state.grid_cell_h;
@@ -128,39 +117,9 @@ void Game_Init(game_t *game) {
       game->rend, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET,
       game->state.gridview_w, game->state.gridview_h);
 
-  camera_t *camera = &game->ui.camera;
-  camera->zoom = 1;
-  camera->viewport_rect = (SDL_Rect){
+  SDL_Rect viewport_rect = {
       .x = 0, .y = 0, .w = game->opt.screen_w, .h = game->opt.screen_h};
-  camera->target_tex = game->ui.gridview_tex;
-  SDL_QueryTexture(camera->target_tex, NULL, NULL, &camera->target_w,
-                   &camera->target_h);
-  int view_w = maxi(game->state.gridview_w, camera->viewport_rect.w);
-  int view_h = maxi(game->state.gridview_h, camera->viewport_rect.h);
-  float viewport_ratio =
-      (float)camera->viewport_rect.w / camera->viewport_rect.h;
-  float view_ratio = (float)view_w / view_h;
-
-  if (viewport_ratio > view_ratio) {
-    if (view_w > view_h) {
-      view_w = view_h * viewport_ratio;
-    } else {
-      view_h = view_w / viewport_ratio;
-    }
-  } else {
-    if (view_w > view_h) {
-      view_h = view_w / viewport_ratio;
-    } else {
-      view_w = view_h * viewport_ratio;
-    }
-  }
-  camera->view_w = view_w;
-  camera->view_h = view_h;
-  camera->view_tex = SDL_CreateTexture(game->rend, SDL_PIXELFORMAT_RGBA8888,
-                                       SDL_TEXTUREACCESS_TARGET, camera->view_w,
-                                       camera->view_h);
-  camera->view_rect =
-      (SDL_Rect){.x = 0, .y = 0, .w = camera->view_w, .h = camera->view_h};
+  camera_init(&game->ui.camera, game->ui.gridview_tex, viewport_rect);
 }
 
 void Game_Destroy(game_t *game) {
@@ -234,52 +193,30 @@ void Game_HandleInput(game_t *game) {
 
 void Game_Update(game_t *game) {
   camera_t *camera = &game->ui.camera;
-  int w = camera->viewport_rect.w;
-  int h = camera->viewport_rect.h;
   if (game->controls.btns_once[BTN_PLUS]) {
-    camera->zoom++;
-    if (camera->zoom > MAX_ZOOM) {
-      camera->zoom = MAX_ZOOM;
-    }
+    camera_zoom(camera, camera->zoom - 1);
   } else if (game->controls.btns_once[BTN_MINUS]) {
-    camera->zoom--;
-    if (camera->zoom < 1) {
-      camera->zoom = 1;
-    }
-  }
-  w = camera->viewport_rect.w / ((float)camera->zoom / 2);
-  h = camera->viewport_rect.h / ((float)camera->zoom / 2);
-
-  int x = camera->view_rect.x;
-  int y = camera->view_rect.y;
-  if (game->controls.btns_once[BTN_UP] && !game->controls.btns_once[BTN_DOWN]) {
-    y -= h;
-  }
-  if (game->controls.btns_once[BTN_DOWN] && !game->controls.btns_once[BTN_UP]) {
-    y += h;
-  }
-  if (game->controls.btns_once[BTN_RIGHT] &&
-      !game->controls.btns_once[BTN_LEFT]) {
-    x += w;
-  }
-  if (game->controls.btns_once[BTN_LEFT] &&
-      !game->controls.btns_once[BTN_RIGHT]) {
-    x -= w;
+    camera_zoom(camera, camera->zoom + 1);
   }
 
-  int min_x = clampi(0, (camera->view_w - camera->target_w) / 2,
-                     (camera->view_w - w) / 2);
-  int max_x = clampi((camera->view_w + camera->target_w) / 2, camera->view_w,
-                     (camera->view_w + w) / 2);
-  x = clampi(min_x, max_x - w, x);
+  int x = 0;
+  int y = 0;
+  if (game->controls.btns_once[BTN_UP]) {
+    y = -camera->view_rect.h;
+  }
+  if (game->controls.btns_once[BTN_DOWN]) {
+    y = camera->view_rect.h;
+  }
+  if (game->controls.btns_once[BTN_RIGHT]) {
+    x = camera->view_rect.w;
+  }
+  if (game->controls.btns_once[BTN_LEFT]) {
+    x = -camera->view_rect.w;
+  }
 
-  int min_y = clampi(0, (camera->view_h - camera->target_h) / 2,
-                     (camera->view_h - h) / 2);
-  int max_y = clampi((camera->view_h + camera->target_h) / 2, camera->view_h,
-                     (camera->view_h + h) / 2);
-  y = clampi(min_y, max_y - h, y);
-
-  camera->view_rect = (SDL_Rect){.x = x, .y = y, .w = w, .h = h};
+  if (x || y) {
+    camera_move_by(camera, x, y);
+  }
 }
 
 void Game_Render(game_t *game) {
@@ -328,22 +265,7 @@ void Game_Render(game_t *game) {
   }
 
   // Render camera view
-  camera_t *camera = &game->ui.camera;
-  SDL_SetRenderTarget(game->rend, camera->view_tex);
-  SDL_SetRenderDrawColor(game->rend, 10, 10, 10, 255);
-  SDL_RenderClear(game->rend);
-  SDL_Rect target_pos = {
-      .x = (camera->view_w - camera->target_w) / 2,
-      .y = (camera->view_h - camera->target_h) / 2,
-      .w = camera->target_w,
-      .h = camera->target_h,
-  };
-  SDL_RenderCopy(game->rend, camera->target_tex, NULL, &target_pos);
-
-  // Render camera view into the window viewport
-  SDL_SetRenderTarget(game->rend, NULL);
-  SDL_RenderCopy(game->rend, camera->view_tex, &game->ui.camera.view_rect,
-                 &game->ui.camera.viewport_rect);
+  camera_render(&game->ui.camera, game->rend);
 
   SDL_RenderPresent(game->rend);
 }
