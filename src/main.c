@@ -25,6 +25,7 @@ typedef struct {
 enum { MAX_ZOOM = 16, GRID_TILE_WIDTH = 256 };
 
 typedef struct {
+  SDL_Rect win_rect;
   camera_t camera;
   SDL_Texture *gridview_tex;
 } ui_t;
@@ -49,8 +50,6 @@ typedef struct {
 } controls_t;
 
 typedef struct {
-  unsigned int screen_w;
-  unsigned int screen_h;
 } options_t;
 
 typedef struct {
@@ -68,8 +67,6 @@ void Game_Init(game_t *game) {
   game->win = NULL;
   game->rend = NULL;
   game->assets = NULL;
-  game->opt.screen_w = 800;
-  game->opt.screen_h = 400;
   game->state.run = 1;
 
   game->controls.mouse_x = -1;
@@ -86,9 +83,11 @@ void Game_Init(game_t *game) {
     FATAL_ERR("Could not init SDL: %s", SDL_GetError());
   }
 
-  game->win = SDL_CreateWindow("Stratego", SDL_WINDOWPOS_CENTERED,
-                               SDL_WINDOWPOS_CENTERED, game->opt.screen_w,
-                               game->opt.screen_h, 0);
+  game->win = SDL_CreateWindow("Stratego", SDL_WINDOWPOS_UNDEFINED,
+                               SDL_WINDOWPOS_UNDEFINED, 800, 600,
+                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+  SDL_GetWindowPosition(game->win, &game->ui.win_rect.x, &game->ui.win_rect.y);
+  SDL_GetWindowSize(game->win, &game->ui.win_rect.w, &game->ui.win_rect.h);
 
   if (game->win == NULL) {
     FATAL_ERR("Could not open SDL window: %s", SDL_GetError());
@@ -104,7 +103,7 @@ void Game_Init(game_t *game) {
 
   game->assets = Assets_Init(game);
 
-  game->state.grid_count = 25;
+  game->state.grid_count = 50;
   game->state.grid_lines = game->state.grid_count + 1;
   game->state.grid_cell_w = GRID_TILE_WIDTH;
   game->state.grid_cell_h = game->state.grid_cell_w / 2;
@@ -118,8 +117,9 @@ void Game_Init(game_t *game) {
       game->state.gridview_w, game->state.gridview_h);
 
   SDL_Rect viewport_rect = {
-      .x = 0, .y = 0, .w = game->opt.screen_w, .h = game->opt.screen_h};
-  camera_init(&game->ui.camera, game->ui.gridview_tex, viewport_rect);
+      .x = 0, .y = 0, .w = game->ui.win_rect.w, .h = game->ui.win_rect.h};
+  Camera_Init(&game->ui.camera, game->ui.gridview_tex, viewport_rect,
+              game->rend);
 }
 
 void Game_Destroy(game_t *game) {
@@ -138,6 +138,17 @@ void Game_HandleInput(game_t *game) {
     switch (e.type) {
     case SDL_QUIT: {
       game->state.run = 0;
+      break;
+    }
+    case SDL_WINDOWEVENT_MOVED: {
+      SDL_GetWindowPosition(game->win, &game->ui.win_rect.x,
+                            &game->ui.win_rect.y);
+      break;
+    }
+    case SDL_WINDOWEVENT_RESIZED: {
+      SDL_GetWindowSize(game->win, &game->ui.win_rect.w, &game->ui.win_rect.h);
+      SDL_Log("window w: %d, window h: %d", game->ui.win_rect.w,
+              game->ui.win_rect.h);
       break;
     }
 
@@ -194,28 +205,36 @@ void Game_HandleInput(game_t *game) {
 void Game_Update(game_t *game) {
   camera_t *camera = &game->ui.camera;
   if (game->controls.btns_once[BTN_PLUS]) {
-    camera_zoom(camera, camera->zoom - 1);
+    Camera_Zoom(camera, camera->zoom - 1);
   } else if (game->controls.btns_once[BTN_MINUS]) {
-    camera_zoom(camera, camera->zoom + 1);
+    Camera_Zoom(camera, camera->zoom + 1);
+  }
+
+  if (camera->viewport_rect.w != game->ui.win_rect.w ||
+      camera->viewport_rect.h != game->ui.win_rect.h) {
+    Camera_ResizeViewport(camera, (SDL_Rect){.x = 0,
+                                             .y = 0,
+                                             .w = game->ui.win_rect.w,
+                                             .h = game->ui.win_rect.h});
   }
 
   int x = 0;
   int y = 0;
   if (game->controls.btns_once[BTN_UP]) {
-    y = -camera->view_rect.h;
+    y = -camera->view_rect.h / 2;
   }
   if (game->controls.btns_once[BTN_DOWN]) {
-    y = camera->view_rect.h;
+    y = camera->view_rect.h / 2;
   }
   if (game->controls.btns_once[BTN_RIGHT]) {
-    x = camera->view_rect.w;
+    x = camera->view_rect.w / 2;
   }
   if (game->controls.btns_once[BTN_LEFT]) {
-    x = -camera->view_rect.w;
+    x = -camera->view_rect.w / 2;
   }
 
   if (x || y) {
-    camera_move_by(camera, x, y);
+    Camera_MoveBy(camera, x, y);
   }
 }
 
@@ -265,7 +284,7 @@ void Game_Render(game_t *game) {
   }
 
   // Render camera view
-  camera_render(&game->ui.camera, game->rend);
+  Camera_Render(&game->ui.camera, game->rend);
 
   SDL_RenderPresent(game->rend);
 }

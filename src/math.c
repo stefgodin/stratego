@@ -1,6 +1,6 @@
 #include "math.h"
 
-int clampi(int min, int max, int value) {
+int Math_Clampi(int min, int max, int value) {
   if (value > max) {
     return max;
   }
@@ -10,14 +10,14 @@ int clampi(int min, int max, int value) {
   return value;
 }
 
-int maxi(int v1, int v2) {
+int Math_Maxi(int v1, int v2) {
   if (v1 > v2) {
     return v1;
   }
   return v2;
 }
 
-int mini(int v1, int v2) {
+int Math_Mini(int v1, int v2) {
   if (v1 < v2) {
     return v1;
   }
